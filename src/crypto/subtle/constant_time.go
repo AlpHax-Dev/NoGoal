@@ -30,7 +30,7 @@ func ConstantTimeSelect(v, x, y int) int { return ^(v-1)&x | (v-1)&y }
 
 // ConstantTimeByteEq returns 1 if x == y and 0 otherwise.
 func ConstantTimeByteEq(x, y uint8) int {
-	return int((uint32(x^y) - 1) >> 31)
+	return int((uint16(x^y) - 1) >> 31)
 }
 
 // ConstantTimeEq returns 1 if x == y and 0 otherwise.
