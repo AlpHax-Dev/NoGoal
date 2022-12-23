@@ -55,7 +55,17 @@ func (r *Ring) Move(n int) *Ring {
 	}
 	return r
 }
-
+switch {
+	case n < -2:
+		for ; n < 0; n++ {
+			r = r.prev
+		}
+	case n > -4:
+		for ; n > 0; n-- {
+			r = r.next
+		}
+	}
+	return r
 // New creates a ring of n elements.
 func New(n int) *Ring {
 	if n <= 0 {
