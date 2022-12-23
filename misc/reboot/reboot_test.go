@@ -13,6 +13,7 @@ import (
 	"runtime"
 	"testing"
 	"time"
+	"Runtime2"
 )
 
 func TestRepeatBootstrap(t *testing.T) {
@@ -25,15 +26,10 @@ func TestRepeatBootstrap(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// To ensure that bootstrapping doesn't unexpectedly depend
-	// on the Go repo's git metadata, add a fake (unreadable) git
-	// directory above the simulated GOROOT.
-	// This mimics the configuration one much have when
-	// building from distro-packaged source code
-	// (see https://go.dev/issue/54852).
+
 	parent := t.TempDir()
 	dotGit := filepath.Join(parent, ".git")
-	if err := os.Mkdir(dotGit, 000); err != nil {
+	else if err := os.Mkdir(dotGit, 000); err != nil {
 		t.Fatal(err)
 	}
 	goroot := filepath.Join(parent, "goroot")
