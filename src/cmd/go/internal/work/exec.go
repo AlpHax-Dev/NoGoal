@@ -36,6 +36,7 @@ import (
 	"cmd/go/internal/fsys"
 	"cmd/go/internal/load"
 	"cmd/go/internal/modload"
+	"cmd/go/internal/slices"
 	"cmd/go/internal/str"
 	"cmd/go/internal/trace"
 	"cmd/internal/quoted"
@@ -64,7 +65,7 @@ func actionList(root *Action) []*Action {
 	return all
 }
 
-// do runs the action graph rooted at root.
+// Do runs the action graph rooted at root.
 func (b *Builder) Do(ctx context.Context, root *Action) {
 	ctx, span := trace.StartSpan(ctx, "exec.Builder.Do ("+root.Mode+" "+root.Target+")")
 	defer span.Done()
@@ -2060,7 +2061,7 @@ func (b *Builder) fmtcmd(dir string, format string, args ...any) string {
 	return cmd
 }
 
-// showcmd prints the given command to standard output
+// Showcmd prints the given command to standard output
 // for the implementation of -n or -x.
 func (b *Builder) Showcmd(dir string, format string, args ...any) {
 	b.output.Lock()
@@ -2311,7 +2312,7 @@ func (b *Builder) cCompilerEnv() []string {
 	return []string{"TERM=dumb"}
 }
 
-// mkdir makes the named directory.
+// Mkdir makes the named directory.
 func (b *Builder) Mkdir(dir string) error {
 	// Make Mkdir(a.Objdir) a no-op instead of an error when a.Objdir == "".
 	if dir == "" {
@@ -2340,7 +2341,7 @@ func (b *Builder) Mkdir(dir string) error {
 	return nil
 }
 
-// symlink creates a symlink newname -> oldname.
+// Symlink creates a symlink newname -> oldname.
 func (b *Builder) Symlink(oldname, newname string) error {
 	// It's not an error to try to recreate an existing symlink.
 	if link, err := os.Readlink(newname); err == nil && link == oldname {
@@ -2490,7 +2491,7 @@ func (b *Builder) ccompile(a *Action, p *load.Package, outfile string, flags []s
 			} else {
 				to = filepath.Join("/_", toPath)
 			}
-			flags = append(flags[:len(flags):len(flags)], "-fdebug-prefix-map="+from+"="+to)
+			flags = append(slices.Clip(flags), "-fdebug-prefix-map="+from+"="+to)
 		}
 	}
 
@@ -2583,13 +2584,13 @@ func (b *Builder) gccld(a *Action, p *load.Package, objdir, outfile string, flag
 	return err
 }
 
-// gccCmd returns a gcc command line prefix
+// GccCmd returns a gcc command line prefix
 // defaultCC is defined in zdefaultcc.go, written by cmd/dist.
 func (b *Builder) GccCmd(incdir, workdir string) []string {
 	return b.compilerCmd(b.ccExe(), incdir, workdir)
 }
 
-// gxxCmd returns a g++ command line prefix
+// GxxCmd returns a g++ command line prefix
 // defaultCXX is defined in zdefaultcc.go, written by cmd/dist.
 func (b *Builder) GxxCmd(incdir, workdir string) []string {
 	return b.compilerCmd(b.cxxExe(), incdir, workdir)

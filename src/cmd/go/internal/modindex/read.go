@@ -117,8 +117,6 @@ func dirHash(modroot, pkgdir string) (cache.ActionID, error) {
 	return h.Sum(), nil
 }
 
-var modrootCache par.Cache
-
 var ErrNotIndexed = errors.New("not in module index")
 
 var (
@@ -128,7 +126,7 @@ var (
 
 // GetPackage returns the IndexPackage for the package at the given path.
 // It will return ErrNotIndexed if the directory should be read without
-// using the index, for instance because the index is disabled, or the packgae
+// using the index, for instance because the index is disabled, or the package
 // is not in a module.
 func GetPackage(modroot, pkgdir string) (*IndexPackage, error) {
 	mi, err := GetModule(modroot)
@@ -146,7 +144,7 @@ func GetPackage(modroot, pkgdir string) (*IndexPackage, error) {
 
 // GetModule returns the Module for the given modroot.
 // It will return ErrNotIndexed if the directory should be read without
-// using the index, for instance because the index is disabled, or the packgae
+// using the index, for instance because the index is disabled, or the package
 // is not in a module.
 func GetModule(modroot string) (*Module, error) {
 	if !enabled || cache.DefaultDir() == "off" {
@@ -168,21 +166,17 @@ func GetModule(modroot string) (*Module, error) {
 	return openIndexModule(modroot, true)
 }
 
-var mcache par.Cache
+var mcache par.ErrCache[string, *Module]
 
 // openIndexModule returns the module index for modPath.
 // It will return ErrNotIndexed if the module can not be read
 // using the index because it contains symlinks.
 func openIndexModule(modroot string, ismodcache bool) (*Module, error) {
-	type result struct {
-		mi  *Module
-		err error
-	}
-	r := mcache.Do(modroot, func() any {
+	return mcache.Do(modroot, func() (*Module, error) {
 		fsys.Trace("openIndexModule", modroot)
 		id, err := moduleHash(modroot, ismodcache)
 		if err != nil {
-			return result{nil, err}
+			return nil, err
 		}
 		data, _, err := cache.Default().GetMmap(id)
 		if err != nil {
@@ -190,33 +184,28 @@ func openIndexModule(modroot string, ismodcache bool) (*Module, error) {
 			// the index because the module hasn't been indexed yet.
 			data, err = indexModule(modroot)
 			if err != nil {
-				return result{nil, err}
+				return nil, err
 			}
 			if err = cache.Default().PutBytes(id, data); err != nil {
-				return result{nil, err}
+				return nil, err
 			}
 		}
 		mi, err := fromBytes(modroot, data)
 		if err != nil {
-			return result{nil, err}
+			return nil, err
 		}
-		return result{mi, nil}
-	}).(result)
-	return r.mi, r.err
+		return mi, nil
+	})
 }
 
-var pcache par.Cache
+var pcache par.ErrCache[[2]string, *IndexPackage]
 
 func openIndexPackage(modroot, pkgdir string) (*IndexPackage, error) {
-	type result struct {
-		pkg *IndexPackage
-		err error
-	}
-	r := pcache.Do([2]string{modroot, pkgdir}, func() any {
+	return pcache.Do([2]string{modroot, pkgdir}, func() (*IndexPackage, error) {
 		fsys.Trace("openIndexPackage", pkgdir)
 		id, err := dirHash(modroot, pkgdir)
 		if err != nil {
-			return result{nil, err}
+			return nil, err
 		}
 		data, _, err := cache.Default().GetMmap(id)
 		if err != nil {
@@ -224,16 +213,15 @@ func openIndexPackage(modroot, pkgdir string) (*IndexPackage, error) {
 			// the index because the package hasn't been indexed yet.
 			data = indexPackage(modroot, pkgdir)
 			if err = cache.Default().PutBytes(id, data); err != nil {
-				return result{nil, err}
+				return nil, err
 			}
 		}
 		pkg, err := packageFromBytes(modroot, data)
 		if err != nil {
-			return result{nil, err}
+			return nil, err
 		}
-		return result{pkg, nil}
-	}).(result)
-	return r.pkg, r.err
+		return pkg, nil
+	})
 }
 
 var errCorrupt = errors.New("corrupt index")
@@ -515,7 +503,7 @@ func (rp *IndexPackage) Import(bctxt build.Context, mode build.ImportMode) (p *b
 		if !shouldBuild || tf.ignoreFile() {
 			if ext == ".go" {
 				p.IgnoredGoFiles = append(p.IgnoredGoFiles, name)
-			} else if fileListForExt((*Package)(p), ext) != nil {
+			} else if fileListForExt(p, ext) != nil {
 				p.IgnoredOtherFiles = append(p.IgnoredOtherFiles, name)
 			}
 			continue
@@ -530,7 +518,7 @@ func (rp *IndexPackage) Import(bctxt build.Context, mode build.ImportMode) (p *b
 			Sfiles = append(Sfiles, name)
 			continue
 		default:
-			if list := fileListForExt((*Package)(p), ext); list != nil {
+			if list := fileListForExt(p, ext); list != nil {
 				*list = append(*list, name)
 			}
 			continue
@@ -585,7 +573,7 @@ func (rp *IndexPackage) Import(bctxt build.Context, mode build.ImportMode) (p *b
 			}
 		}
 		if directives := tf.cgoDirectives(); directives != "" {
-			if err := ctxt.saveCgo(name, (*Package)(p), directives); err != nil {
+			if err := ctxt.saveCgo(name, p, directives); err != nil {
 				badGoFile(name, err)
 			}
 		}
@@ -819,7 +807,7 @@ func (m *Module) Package(path string) *IndexPackage {
 	return m.pkg(i)
 }
 
-// pkgAt returns the i'th IndexPackage in m.
+// pkg returns the i'th IndexPackage in m.
 func (m *Module) pkg(i int) *IndexPackage {
 	r := m.d.readAt(m.pkgOff(i))
 	p := new(IndexPackage)
@@ -966,7 +954,7 @@ func (d *decoder) boolAt(off int) bool {
 	return d.intAt(off) != 0
 }
 
-// stringTableAt returns the string pointed at by the int at the given offset in d.data.
+// stringAt returns the string pointed at by the int at the given offset in d.data.
 func (d *decoder) stringAt(off int) string {
 	return d.stringTableAt(d.intAt(off))
 }

@@ -45,7 +45,7 @@ var depsRules = `
 	  internal/cpu, internal/goarch,
 	  internal/goexperiment, internal/goos,
 	  internal/goversion, internal/nettrace, internal/platform,
-	  unicode/utf8, unicode/utf16, unicode,
+	  maps, unicode/utf8, unicode/utf16, unicode,
 	  unsafe;
 
 	# These packages depend only on internal/goarch and unsafe.
@@ -278,7 +278,7 @@ var depsRules = `
 	math/big, go/token
 	< go/constant;
 
-	container/heap, go/constant, go/parser, internal/types/errors, regexp
+	container/heap, go/constant, go/parser, internal/types/errors, internal/lazyregexp
 	< go/types;
 
 	FMT, internal/goexperiment
@@ -520,7 +520,7 @@ var depsRules = `
 	FMT, compress/gzip, encoding/binary, text/tabwriter
 	< runtime/pprof;
 
-	OS, compress/gzip, regexp
+	OS, compress/gzip, internal/lazyregexp
 	< internal/profile;
 
 	html, internal/profile, net/http, runtime/pprof, runtime/trace

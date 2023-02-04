@@ -3304,7 +3304,7 @@ func (s *state) exprCheckPtr(n ir.Node, checkPtrOK bool) *ssa.Value {
 
 	case ir.OGETCALLERSP:
 		n := n.(*ir.CallExpr)
-		return s.newValue0(ssa.OpGetCallerSP, n.Type())
+		return s.newValue1(ssa.OpGetCallerSP, n.Type(), s.mem())
 
 	case ir.OAPPEND:
 		return s.append(n.(*ir.CallExpr), false)
@@ -3989,7 +3989,7 @@ func InitTables() {
 
 	add("runtime", "getcallersp",
 		func(s *state, n *ir.CallExpr, args []*ssa.Value) *ssa.Value {
-			return s.newValue0(ssa.OpGetCallerSP, s.f.Config.Types.Uintptr)
+			return s.newValue1(ssa.OpGetCallerSP, s.f.Config.Types.Uintptr, s.mem())
 		},
 		all...)
 
@@ -4000,17 +4000,23 @@ func InitTables() {
 		},
 		sys.ARM64, sys.PPC64)
 
+	/* Use only on Power10 as the new byte reverse instructions that Power10 provide
+	   make it worthwhile as an intrinsic */
+	brev_arch := []sys.ArchFamily{sys.AMD64, sys.ARM64, sys.ARM, sys.S390X}
+	if buildcfg.GOPPC64 >= 10 {
+		brev_arch = append(brev_arch, sys.PPC64)
+	}
 	/******** runtime/internal/sys ********/
 	addF("runtime/internal/sys", "Bswap32",
 		func(s *state, n *ir.CallExpr, args []*ssa.Value) *ssa.Value {
 			return s.newValue1(ssa.OpBswap32, types.Types[types.TUINT32], args[0])
 		},
-		sys.AMD64, sys.ARM64, sys.ARM, sys.S390X)
+		brev_arch...)
 	addF("runtime/internal/sys", "Bswap64",
 		func(s *state, n *ir.CallExpr, args []*ssa.Value) *ssa.Value {
 			return s.newValue1(ssa.OpBswap64, types.Types[types.TUINT64], args[0])
 		},
-		sys.AMD64, sys.ARM64, sys.ARM, sys.S390X)
+		brev_arch...)
 
 	/****** Prefetch ******/
 	makePrefetchFunc := func(op ssa.Op) func(s *state, n *ir.CallExpr, args []*ssa.Value) *ssa.Value {
@@ -4537,7 +4543,16 @@ func InitTables() {
 	alias("math/bits", "ReverseBytes64", "runtime/internal/sys", "Bswap64", all...)
 	alias("math/bits", "ReverseBytes32", "runtime/internal/sys", "Bswap32", all...)
 	// ReverseBytes inlines correctly, no need to intrinsify it.
-	// ReverseBytes16 lowers to a rotate, no need for anything special here.
+	// Nothing special is needed for targets where ReverseBytes16 lowers to a rotate
+	// On Power10, 16-bit rotate is not available so use BRH instruction
+	if buildcfg.GOPPC64 >= 10 {
+		addF("math/bits", "ReverseBytes16",
+			func(s *state, n *ir.CallExpr, args []*ssa.Value) *ssa.Value {
+				return s.newValue1(ssa.OpBswap16, types.Types[types.TUINT], args[0])
+			},
+			sys.PPC64)
+	}
+
 	addF("math/bits", "Len64",
 		func(s *state, n *ir.CallExpr, args []*ssa.Value) *ssa.Value {
 			return s.newValue1(ssa.OpBitLen64, types.Types[types.TINT], args[0])
@@ -6928,7 +6943,7 @@ func genssa(f *ssa.Func, pp *objw.Progs) {
 	// debuggers may attribute it to previous function in program.
 	firstPos := src.NoXPos
 	for _, v := range f.Entry.Values {
-		if v.Pos.IsStmt() == src.PosIsStmt {
+		if v.Pos.IsStmt() == src.PosIsStmt && v.Op != ssa.OpArg && v.Op != ssa.OpArgIntReg && v.Op != ssa.OpArgFloatReg && v.Op != ssa.OpLoadReg && v.Op != ssa.OpStoreReg {
 			firstPos = v.Pos
 			v.Pos = firstPos.WithDefaultStmt()
 			break
@@ -7009,6 +7024,7 @@ func genssa(f *ssa.Func, pp *objw.Progs) {
 				inlMarkList = append(inlMarkList, p)
 				pos := v.Pos.AtColumn1()
 				inlMarksByPos[pos] = append(inlMarksByPos[pos], p)
+				firstPos = src.NoXPos
 
 			default:
 				// Special case for first line in function; move it to the start (which cannot be a register-valued instruction)
@@ -7946,7 +7962,7 @@ func deferstruct() *types.Type {
 	}
 
 	// build struct holding the above fields
-	s := types.NewStruct(types.NoPkg, fields)
+	s := types.NewStruct(fields)
 	s.SetNoalg(true)
 	types.CalcStructSize(s)
 	return s

@@ -567,16 +567,12 @@ type writerOnly struct {
 // to a *net.TCPConn with sendfile, or from a supported src type such
 // as a *net.TCPConn on Linux with splice.
 func (w *response) ReadFrom(src io.Reader) (n int64, err error) {
-	bufp := copyBufPool.Get().(*[]byte)
-	buf := *bufp
-	defer copyBufPool.Put(bufp)
-
 	// Our underlying w.conn.rwc is usually a *TCPConn (with its
 	// own ReadFrom method). If not, just fall back to the normal
 	// copy method.
 	rf, ok := w.conn.rwc.(io.ReaderFrom)
 	if !ok {
-		return io.CopyBuffer(writerOnly{w}, src, buf)
+		return io.Copy(writerOnly{w}, src)
 	}
 
 	// Copy the first sniffLen bytes before switching to ReadFrom.
@@ -584,7 +580,7 @@ func (w *response) ReadFrom(src io.Reader) (n int64, err error) {
 	// source is available (see golang.org/issue/5660) and provides
 	// enough bytes to perform Content-Type sniffing when required.
 	if !w.cw.wroteHeader {
-		n0, err := io.CopyBuffer(writerOnly{w}, io.LimitReader(src, sniffLen), buf)
+		n0, err := io.Copy(writerOnly{w}, io.LimitReader(src, sniffLen))
 		n += n0
 		if err != nil || n0 < sniffLen {
 			return n, err
@@ -602,7 +598,7 @@ func (w *response) ReadFrom(src io.Reader) (n int64, err error) {
 		return n, err
 	}
 
-	n0, err := io.CopyBuffer(writerOnly{w}, src, buf)
+	n0, err := io.Copy(writerOnly{w}, src)
 	n += n0
 	return n, err
 }
@@ -798,13 +794,6 @@ var (
 	bufioWriter2kPool sync.Pool
 	bufioWriter4kPool sync.Pool
 )
-
-var copyBufPool = sync.Pool{
-	New: func() any {
-		b := make([]byte, 32*1024)
-		return &b
-	},
-}
 
 func bufioWriterPool(size int) *sync.Pool {
 	switch size {
@@ -2278,7 +2267,7 @@ func RedirectHandler(url string, code int) Handler {
 // Longer patterns take precedence over shorter ones, so that
 // if there are handlers registered for both "/images/"
 // and "/images/thumbnails/", the latter handler will be
-// called for paths beginning "/images/thumbnails/" and the
+// called for paths beginning with "/images/thumbnails/" and the
 // former will receive requests for any other paths in the
 // "/images/" subtree.
 //
@@ -3319,7 +3308,11 @@ var http2server = godebug.New("http2server")
 // configured otherwise. (by setting srv.TLSNextProto non-nil)
 // It must only be called via srv.nextProtoOnce (use srv.setupHTTP2_*).
 func (srv *Server) onceSetNextProtoDefaults() {
-	if omitBundledHTTP2 || http2server.Value() == "0" {
+	if omitBundledHTTP2 {
+		return
+	}
+	if http2server.Value() == "0" {
+		http2server.IncNonDefault()
 		return
 	}
 	// Enable HTTP/2 by default if the user hasn't otherwise
